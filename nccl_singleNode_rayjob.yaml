@@ -1,0 +1,156 @@
+apiVersion: ray.io/v1
+kind: RayJob
+metadata:
+  name: h200-nccl
+  namespace: runway-compute-h200-as1-playground
+  labels:
+    queue: root.h200.dev.mlp
+spec:
+  entrypoint: NUM_NODES=1 /opt/conda/envs/ray38/bin/python /home/ray/workspace/nccl_benchmark.py
+  shutdownAfterJobFinishes: false 
+  
+  rayClusterSpec:
+    rayVersion: '2.9.0'
+    headGroupSpec:
+      rayStartParams:
+        dashboard-host: '0.0.0.0'
+      template:
+        metadata:
+          labels:
+            applicationId: multi-node
+            queue: root.h200.dev.mlp
+            ray-node-type: head
+        spec:
+          serviceAccountName: mlp-sa
+          initContainers:
+          - name: fetch-single-script
+            image: jfrog.fkinternal.com/jarvis-services/gpu_ray_nccl_image:2.9.0_v0_test3
+            command: ["bash", "-c"]
+            args: ["gcloud storage cp gs://test-bucket-hns/data_access/harsha/nccl_benchmark.py /home/ray/workspace/nccl_benchmark.py"]
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 1001
+            volumeMounts:
+              - mountPath: /home/ray/workspace
+                name: shared-workspace
+          containers:
+            - name: ray-head
+              env:
+                - name: NCCL_DEBUG
+                  value: "WARN"
+                - name: NCCL_SOCKET_IFNAME
+                  value: "eth0"
+                - name: NCCL_IB_DISABLE
+                  value: "0"
+              image: jfrog.fkinternal.com/jarvis-services/gpu_ray_nccl_image:2.9.0_v0_test3
+              # Look: Zero GCSfuse configuration here! The Head node stays safe and clean.
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: "8Gi"
+                requests:
+                  cpu: "2"
+                  memory: "8Gi"
+              ports:
+              - containerPort: 6379
+                name: gcs
+                protocol: TCP
+              - containerPort: 8265
+                name: dashboard
+                protocol: TCP
+              - containerPort: 52365        # ← add this
+                name: agent
+                protocol: TCP
+              volumeMounts:
+              - mountPath: /home/ray/workspace
+                name: shared-workspace
+          volumes:
+            - name: shared-workspace
+              emptyDir: {}
+
+    workerGroupSpecs:
+      - groupName: h200-worker
+        replicas: 1
+        rayStartParams: {}
+        template:
+          metadata:
+            annotations:
+              # GCSfuse remains strictly on the workers to stream the heavy data arrays
+              gke-gcsfuse/volumes: "true"
+              gke-gcsfuse/cpu-limit: "1"
+              gke-gcsfuse/memory-limit: "10Gi"
+              gke-gcsfuse/ephemeral-storage-limit: "100Gi"
+              gke-gcsfuse/cpu-request: "1"
+              gke-gcsfuse/memory-request: "10Gi"
+              gke-gcsfuse/ephemeral-storage-request: "100Gi"
+              sidecar.istio.io/inject: "false"
+              queue: root.h200.dev.mlp
+            labels:
+              actor.ray.io/group: h200-sandbox-worker
+              applicationId: multi-node
+          spec:
+            serviceAccountName: mlp-sa
+            containers:
+              - name: ray-worker
+                env:
+                  - name: NCCL_DEBUG
+                    value: "INFO"                # change to INFO if diagnosing failures
+                  - name: NCCL_IB_DISABLE
+                    value: "0"                   # keep InfiniBand enabled
+                  - name: NCCL_IB_GID_INDEX
+                    value: "3"                   # critical for RoCE v2 on GKE        
+                  - name: NCCL_SOCKET_IFNAME
+                    value: "eth0"                # your network interface
+                  - name: NCCL_P2P_LEVEL
+                    value: "NVL"                 # use NVLink for P2P within node
+                  - name: NCCL_NET_GDR_LEVEL
+                    value: "2"                   # enable GPUDirect RDMA
+                  - name: NCCL_TIMEOUT
+                    value: "3600"                # prevent timeout on large message sizes
+                image: jfrog.fkinternal.com/jarvis-services/gpu_ray_nccl_image:2.9.0_v0_test3
+                securityContext:
+                  runAsUser: 1001 # Matches non-root runtime permissions
+                  runAsNonRoot: true
+                  capabilities:
+                    add: ["SYS_PTRACE", "NET_ADMIN"] # Blends NVLink tracing with platform network permissions
+                resources:
+                  limits:
+                    cpu: "200"
+                    memory: "2760Gi"
+                    nvidia.com/gpu: "8"        # all 8 H200s on the node
+                  requests:
+                    cpu: "200"
+                    memory: "2760Gi"
+                    nvidia.com/gpu: "8"   
+                volumeMounts:
+                  - name: tmpfs-mount
+                    mountPath: /dev/shm
+                  - name: model-data
+                    mountPath: /temp-mount/
+                    readOnly: true
+                  - name: gke-gcsfuse-tmp
+                    mountPath: /gcsfuse-tmp
+                  - name: gke-gcsfuse-buffer
+                    mountPath: /gcsfuse-buffer
+                  - name: gke-gcsfuse-cache
+                    mountPath: /gcsfuse-cache
+            volumes:
+              - name: tmpfs-mount
+                emptyDir:
+                  medium: Memory
+              - name: gke-gcsfuse-tmp
+                emptyDir: {}
+              - name: gke-gcsfuse-buffer
+                emptyDir: {}
+              - name: gke-gcsfuse-cache
+                emptyDir: {}
+              - name: model-data
+                csi:
+                  driver: gcsfuse.csi.storage.gke.io
+                  volumeAttributes:
+                    bucketName: test-bucket-hns
+                    disableMetrics: "false"
+                    gcsfuseMetadataPrefetchOnMount: "true" # Forces prefetch initialization container trigger
+                    skipCSIBucketAccessCheck: "true"
+                    # Aggressive cache optimization arguments extracted from active job run
+                    mountOptions: "implicit-dirs,metadata-cache:ttl-secs:-1,metadata-cache:stat-cache-max-size-mb:-1,metadata-cache:type-cache-max-size-mb:-1,file-cache:max-size-mb:-1,file-cache:cache-file-for-range-read:true,file-cache:enable-parallel-downloads:true,file-system:kernel-list-cache-ttl-secs:-1"

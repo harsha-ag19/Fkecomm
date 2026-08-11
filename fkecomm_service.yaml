@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    cloud.google.com/neg: '{"exposed_ports":{"8265":{}}}'
+    elb.fcp/backend-port: "8265"
+    elb.fcp/backend-protocol-version: http2.0
+    elb.fcp/do-not-delete-vip: "true"
+    elb.fcp/frontend-port: "80"
+    elb.fcp/frontend-protocol-version: http1.1
+    elb.fcp/health-check-path: /api/gcs_healthz
+    elb.fcp/health-check-port: "8265"
+    elb.fcp/name: fkecomm-cluster
+    elb.kaas/bind-gateway: "true"
+    gke/cpu-class: n2d
+  finalizers:
+  - elb.fcp/service-dns-finalizer
+  labels:
+    ray.io/cluster: fkecomm-cluster
+    ray.io/identifier: fkecomm-cluster-head
+    ray.io/node-type: head
+  name: fkecomm-custom-head-svc
+  namespace: runway-compute-h200-as1-playground
+  ownerReferences:
+  - apiVersion: ray.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: RayCluster
+    name: fkecomm-cluster
+    uid: e4c9a047-eb71-4a3a-bf52-d753a5697dea
+spec:
+  ports:
+  - appProtocol: tcp
+    name: dashboard
+    port: 8265
+    protocol: TCP
+    targetPort: 8265
+  - appProtocol: tcp
+    name: gcs
+    port: 6379
+    protocol: TCP
+    targetPort: 6379
+  - appProtocol: tcp
+    name: metrics
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    ray.io/cluster: fkecomm-cluster
+    ray.io/identifier: fkecomm-cluster-head
+    ray.io/node-type: head
+  sessionAffinity: None
+  type: ClusterIP

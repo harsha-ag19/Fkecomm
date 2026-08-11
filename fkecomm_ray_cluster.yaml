@@ -1,0 +1,140 @@
+apiVersion: ray.io/v1
+kind: RayCluster
+metadata:
+  name: fkecomm-cluster
+  namespace: runway-compute-h200-as1-playground
+spec:
+  rayVersion: '2.56.1'
+  headGroupSpec:
+    rayStartParams:
+      dashboard-host: '0.0.0.0'
+    template:
+      metadata:
+        labels:
+          applicationId: multi-node
+          ray-node-type: head
+        annotations:
+          gke-gcsfuse/volumes: "true"
+          gke-gcsfuse/cpu-limit: "1"
+          gke-gcsfuse/memory-limit: "20Gi"
+          gke-gcsfuse/ephemeral-storage-limit: "100Gi"
+          gke-gcsfuse/cpu-request: "1"
+          gke-gcsfuse/memory-request: "20Gi"
+          gke-gcsfuse/ephemeral-storage-request: "100Gi"
+          sidecar.istio.io/inject: "false"
+      spec:
+        serviceAccountName: mlp-sa
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          fsGroup: 1000
+        containers:
+          - name: ray-head
+            image: jfrog.fkinternal.com/jarvis-services/gpu_ray_megatron:2.56.1_v0_test4
+            resources:
+              limits:
+                cpu: "2"
+                memory: "8Gi"
+              requests:
+                cpu: "2"
+                memory: "8Gi"
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 1000
+            ports:
+            - containerPort: 6379
+              name: gcs
+              protocol: TCP
+            - containerPort: 8265
+              name: dashboard
+              protocol: TCP
+            - containerPort: 52365
+              name: agent
+              protocol: TCP
+            - containerPort: 10001
+              name: client
+              protocol: TCP
+            volumeMounts:
+              - mountPath: /shared
+                name: shared-scripts
+        volumes:
+          - name: shared-scripts
+            csi:
+              driver: gcsfuse.csi.storage.gke.io
+              volumeAttributes:
+                bucketName: test-bucket-hns
+                disableMetrics: "false"
+                gcsfuseMetadataPrefetchOnMount: "true"
+                skipCSIBucketAccessCheck: "true"
+                mountOptions: "uid=1000,gid=1000,file-mode=777,dir-mode=777,implicit-dirs,metadata-cache:ttl-secs:-1,metadata-cache:stat-cache-max-size-mb:-1,metadata-cache:type-cache-max-size-mb:-1,file-cache:max-size-mb:-1,file-cache:cache-file-for-range-read:true,file-cache:enable-parallel-downloads:true,file-system:kernel-list-cache-ttl-secs:-1"
+
+  workerGroupSpecs:
+    - groupName: h200-worker
+      replicas: 2
+      minReplicas: 2
+      maxReplicas: 2
+      rayStartParams: {}
+      template:
+        metadata:
+          annotations:
+            gke-gcsfuse/volumes: "true"
+            gke-gcsfuse/cpu-limit: "1"
+            gke-gcsfuse/memory-limit: "20Gi"
+            gke-gcsfuse/ephemeral-storage-limit: "100Gi"
+            gke-gcsfuse/cpu-request: "1"
+            gke-gcsfuse/memory-request: "20Gi"
+            gke-gcsfuse/ephemeral-storage-request: "100Gi"
+            sidecar.istio.io/inject: "false"
+          labels:
+            actor.ray.io/group: h200-worker
+            applicationId: multi-node
+        spec:
+          serviceAccountName: mlp-sa
+          containers:
+            - name: ray-worker
+              image: jfrog.fkinternal.com/jarvis-services/gpu_ray_megatron:2.56.1_v0_test4
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1000
+                capabilities:
+                  add: ["SYS_PTRACE", "NET_ADMIN"]
+              env:
+                - name: NVIDIA_VISIBLE_DEVICES
+                  value: "all"
+                - name: NVIDIA_DRIVER_CAPABILITIES
+                  value: "compute,utility"
+                - name: PATH
+                  value: "/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                - name: LD_LIBRARY_PATH
+                  value: "/usr/local/nvidia/lib64:/usr/local/nvidia/lib:/usr/local/cuda/lib64"
+                - name: NCCL_SOCKET_IFNAME
+                  value: "eth0"
+                - name: NCCL_DEBUG
+                  value: "WARN"
+              resources:
+                limits:
+                  cpu: "96"
+                  memory: "768Gi"
+                  nvidia.com/gpu: "8"
+                requests:
+                  cpu: "96"
+                  memory: "768Gi"
+                  nvidia.com/gpu: "8"
+              volumeMounts:
+                - name: tmpfs-mount
+                  mountPath: /dev/shm
+                - name: shared-scripts
+                  mountPath: /shared
+          volumes:
+            - name: tmpfs-mount
+              emptyDir:
+                medium: Memory
+            - name: shared-scripts
+              csi:
+                driver: gcsfuse.csi.storage.gke.io
+                volumeAttributes:
+                  bucketName: test-bucket-hns
+                  disableMetrics: "false"
+                  gcsfuseMetadataPrefetchOnMount: "true"
+                  skipCSIBucketAccessCheck: "true"
+                  mountOptions: "uid=1000,gid=1000,file-mode=777,dir-mode=777,implicit-dirs,metadata-cache:ttl-secs:-1,metadata-cache:stat-cache-max-size-mb:-1,metadata-cache:type-cache-max-size-mb:-1,file-cache:max-size-mb:-1,file-cache:cache-file-for-range-read:true,file-cache:enable-parallel-downloads:true,file-system:kernel-list-cache-ttl-secs:-1"

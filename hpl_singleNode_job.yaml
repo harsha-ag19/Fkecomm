@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hpl-single-node
+  namespace: runway-compute-h200-as1-playground
+spec:
+  backoffLimit: 0                    # one-shot test — don't auto-retry if it fails
+  template:
+    spec:
+      serviceAccountName: mlp-sa
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        runAsNonRoot: true
+      containers:
+        - name: hpl
+          # ▼▼ CONFIRM THIS PATH with your platform team (internal mirror of NVIDIA's image)
+          image: jfrog.fkinternal.com/nvcr/nvidia/hpc-benchmarks:26.02
+          command: ["bash", "-lc"]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+          args:
+            - >
+              cd /workspace &&
+              mpirun --bind-to none -np 8
+              ./hpl.sh
+              --dat /workspace/hpl-linux-x86_64/sample-dat/HPL-8GPUs.dat
+              --no-multinode
+          resources:
+            limits:
+              nvidia.com/gpu: "8"      # all 8 H200s on the node
+            requests:
+              nvidia.com/gpu: "8"
+              cpu: "32"
+              memory: "64Gi"
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm      # HPL needs a big shared-memory area
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory

@@ -1,0 +1,135 @@
+# =============================================================================
+# 2-node HPL benchmark (16 x H200) via the Kubeflow MPI Operator.
+#
+# This is the multi-node counterpart to your single-node HPL Job.
+# It launches 2 worker pods (one per a3-ultragpu-8g node, 8 GPUs each = 16),
+# and a Launcher pod that runs `mpirun` across both.
+#
+# BEFORE USING, confirm three things with your platform team:
+#   1. The MPI Operator is installed        -> `kubectl get crd mpijobs.kubeflow.org`
+#   2. The internal image path is correct   -> the `image:` lines below
+#   3. An RDMA-enabled node pool exists      -> otherwise this runs very slowly
+#                                               or fails at NVSHMEM init (see notes)
+# =============================================================================
+apiVersion: kubeflow.org/v2beta1
+kind: MPIJob
+metadata:
+  name: hpl-2node
+  namespace: runway-compute-h200-as1-playground
+spec:
+  sshAuthMountPath: /home/mpiuser/.ssh
+  slotsPerWorker: 8            # 8 GPUs (= 8 MPI ranks) per node
+  runPolicy:
+    backoffLimit: 2            # one-shot test; don't auto-retry on failure
+  mpiReplicaSpecs:
+
+    # ---- LAUNCHER: runs mpirun, does no compute itself ----
+    Launcher:
+      replicas: 1
+      template:
+        spec:
+          serviceAccountName: mlp-sa
+          restartPolicy: Never
+          securityContext:           # <-- POD level
+            runAsUser: 1000
+            runAsGroup: 100
+            fsGroup: 100             # <-- fsGroup lives HERE
+            runAsNonRoot: true
+          containers:
+            - name: hpl-launcher
+              # ▼▼ CONFIRM internal mirror path
+              image: jfrog.fkinternal.com/jarvis-services/gpu_hpl_mpi:26.02_v0_test4
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: "8Gi"
+                requests:
+                  cpu: "2"
+                  memory: "8Gi"
+              securityContext:       # <-- CONTAINER level
+                runAsUser: 1000
+                runAsNonRoot: true
+                allowPrivilegeEscalation: false
+              command: ["bash", "-lc"]
+              args:
+                - >
+                  mpirun --allow-run-as-root
+                  -np 16
+                  --bind-to none
+                  -mca plm_rsh_args "-p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+                  -x NCCL_DEBUG=INFO
+                  -x NCCL_SOCKET_IFNAME=eth0
+                  -x NCCL_IB_DISABLE=1
+                  -x NVSHMEM_DISABLE_CUDA_VMM=1
+                  -x NVSHMEM_REMOTE_TRANSPORT=none
+                  /workspace/hpl.sh
+                  --dat /workspace/hpl-linux-x86_64/sample-dat/HPL-16GPUs.dat
+              env:
+              - name: PATH
+                value: "/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/opt/conda/bin:/usr/bin:/bin"
+              - name: LD_LIBRARY_PATH
+                value: "/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/workspace/hpl-linux-x86_64"
+
+    # ---- WORKERS: the pods that actually hold the GPUs ----
+    Worker:
+      replicas: 2              # 2 nodes
+      template:
+        spec:
+          serviceAccountName: mlp-sa
+          restartPolicy: Never
+          securityContext:           # <-- POD level
+            runAsUser: 1000
+            runAsGroup: 100
+            fsGroup: 100             # <-- fsGroup lives HERE
+            runAsNonRoot: true
+          # Force the 2 workers onto DIFFERENT nodes (one full node each)
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchExpressions:
+                      - key: training.kubeflow.org/job-name
+                        operator: In
+                        values: ["hpl-2node"]
+                      - key: training.kubeflow.org/job-role      # <-- add this
+                        operator: In
+                        values: ["worker"]       
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: hpl-worker
+              # ▼▼ CONFIRM internal mirror path (same image as launcher)
+              image: jfrog.fkinternal.com/jarvis-services/gpu_hpl_mpi:26.02_v0_test4
+              command: ["bash", "-lc"]
+              args:
+                - >
+                  mkdir -p /tmp/sshd &&
+                  ssh-keygen -t rsa -f /tmp/sshd/ssh_host_rsa_key -N "" &&
+                  /usr/sbin/sshd -D -p 2222
+                  -o HostKey=/tmp/sshd/ssh_host_rsa_key
+                  -o PidFile=/tmp/sshd/sshd.pid
+                  -o StrictModes=no
+              securityContext:       # <-- CONTAINER level
+                runAsUser: 1000
+                runAsNonRoot: true
+                allowPrivilegeEscalation: false
+              env:
+              - name: PATH
+                value: "/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/opt/conda/bin:/usr/bin:/bin"
+              - name: LD_LIBRARY_PATH
+                value: "/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/workspace/hpl-linux-x86_64:/opt/hpcx/ompi/lib:/opt/hpcx/ucx/lib"
+              resources:
+                limits:
+                  cpu: "32"
+                  memory: "64Gi"
+                  nvidia.com/gpu: "8"     # all 8 H200s on this node
+                requests:
+                  nvidia.com/gpu: "8"
+                  cpu: "32"
+                  memory: "64Gi"
+              volumeMounts:
+                - name: dshm
+                  mountPath: /dev/shm      # HPL/MPI need a large shared-memory area
+          volumes:
+            - name: dshm
+              emptyDir:
+                medium: Memory
