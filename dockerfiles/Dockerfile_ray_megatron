@@ -4,34 +4,24 @@ USER root
 # 1. Install Megatron-LM with --no-deps to prevent transitive dependency upgrades
 RUN pip uninstall -y megatron-core && \
     pip install --no-cache-dir \
-      --trusted-host 10.24.14.195 \
-      --index-url http://10.24.14.195/artifactory/api/pypi/python_virtual/simple \
       pybind11 && \
     cd /workspace/megatron-bridge/3rdparty/Megatron-LM && \
     pip install --no-cache-dir --no-build-isolation --no-deps \
-      --trusted-host 10.24.14.195 \
-      --index-url http://10.24.14.195/artifactory/api/pypi/python_virtual/simple \
       -e .
 
 # 2. Install Ray
 RUN pip install --no-cache-dir \
-      --trusted-host 10.24.14.195 \
-      --index-url http://10.24.14.195/artifactory/api/pypi/python_virtual/simple \
       "ray[default,train]==2.56.1"
 
 RUN ray --version && test -x "$(command -v ray)"
 
 # 3. Install custom-built NVIDIA Resiliency Extension (--no-deps)
 RUN pip install --no-cache-dir --no-deps \
-      --trusted-host 10.24.14.195 \
-      --index-url http://10.24.14.195/artifactory/api/pypi/python_virtual/simple \
       "nvidia-resiliency-ext==0.6.0"
 
 # 4. Uninstall CUTLASS 4.6.0+ libraries and pin nvidia-cutlass-dsl < 4.6.0 (installs 4.5.3)
 RUN pip uninstall -y nvidia-cutlass-dsl nvidia-cutlass-dsl-libs-base nvidia-cutlass-dsl-libs-cu12 nvidia-cutlass-dsl-libs-cu13 nvidia-cutlass-dsl-libs-core && \
     pip install --no-cache-dir \
-      --trusted-host 10.24.14.195 \
-      --index-url http://10.24.14.195/artifactory/api/pypi/python_virtual/simple \
       "nvidia-cutlass-dsl<4.6.0"
 
 # 5. Verification step

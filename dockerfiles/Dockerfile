@@ -17,8 +17,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       fuse pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-ENV PIP_TRUSTED_HOST="10.24.14.195"
-ENV PIP_INDEX_URL="http://10.24.14.195/artifactory/api/pypi/python_virtual/simple"
 
 RUN pip install --no-cache-dir uv
 
