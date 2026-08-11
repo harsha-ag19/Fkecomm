@@ -79,10 +79,6 @@ def main():
             "packages": EXTRA_PIP_PACKAGES,
             "pip_check": False,
         }
-        runtime_env["env_vars"]["PIP_INDEX_URL"] = (
-            "http://jfrog.fkinternal.com/artifactory/api/pypi/python_virtual/simple"
-        )
-        runtime_env["env_vars"]["PIP_TRUSTED_HOST"] = "jfrog.fkinternal.com"
 
     job_id = client.submit_job(
         entrypoint=f"python {LAUNCHER_SCRIPT}",
