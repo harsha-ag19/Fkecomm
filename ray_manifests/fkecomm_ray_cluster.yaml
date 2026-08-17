@@ -30,7 +30,7 @@ spec:
           fsGroup: 1000
         containers:
           - name: ray-head
-            image: jfrog.fkinternal.com/jarvis-services/gpu_ray_megatron:2.56.1_v0_test4
+            image:
             resources:
               limits:
                 cpu: "2"
@@ -92,7 +92,7 @@ spec:
           serviceAccountName: mlp-sa
           containers:
             - name: ray-worker
-              image: jfrog.fkinternal.com/jarvis-services/gpu_ray_megatron:2.56.1_v0_test4
+              image:
               securityContext:
                 runAsNonRoot: true
                 runAsUser: 1000

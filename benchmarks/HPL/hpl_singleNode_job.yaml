@@ -17,7 +17,7 @@ spec:
       containers:
         - name: hpl
           # ▼▼ CONFIRM THIS PATH with your platform team (internal mirror of NVIDIA's image)
-          image: jfrog.fkinternal.com/nvcr/nvidia/hpc-benchmarks:26.02
+          image:
           command: ["bash", "-lc"]
           securityContext:
             runAsNonRoot: true

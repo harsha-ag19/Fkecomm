@@ -24,7 +24,7 @@ spec:
           serviceAccountName: mlp-sa
           initContainers:
           - name: fetch-single-script
-            image: jfrog.fkinternal.com/jarvis-services/gpu_ray_nccl_image:2.9.0_v0_test3
+            image:
             command: ["bash", "-c"]
             args: ["gcloud storage cp gs://test-bucket-hns/data_access/harsha/nccl_benchmark.py /home/ray/workspace/nccl_benchmark.py"]
             securityContext:
@@ -42,7 +42,7 @@ spec:
                   value: "eth0"
                 - name: NCCL_IB_DISABLE
                   value: "0"
-              image: jfrog.fkinternal.com/jarvis-services/gpu_ray_nccl_image:2.9.0_v0_test3
+              image:
               # Look: Zero GCSfuse configuration here! The Head node stays safe and clean.
               resources:
                 limits:
@@ -107,7 +107,7 @@ spec:
                     value: "2"                   # enable GPUDirect RDMA
                   - name: NCCL_TIMEOUT
                     value: "3600"                # prevent timeout on large message sizes
-                image: jfrog.fkinternal.com/jarvis-services/gpu_ray_nccl_image:2.9.0_v0_test3
+                image:
                 securityContext:
                   runAsUser: 1001 # Matches non-root runtime permissions
                   runAsNonRoot: true

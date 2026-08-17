@@ -38,7 +38,7 @@ spec:
           containers:
             - name: hpl-launcher
               # ▼▼ CONFIRM internal mirror path
-              image: jfrog.fkinternal.com/jarvis-services/gpu_hpl_mpi:26.02_v0_test4
+              image:
               resources:
                 limits:
                   cpu: "2"
@@ -98,7 +98,7 @@ spec:
           containers:
             - name: hpl-worker
               # ▼▼ CONFIRM internal mirror path (same image as launcher)
-              image: jfrog.fkinternal.com/jarvis-services/gpu_hpl_mpi:26.02_v0_test4
+              image:
               command: ["bash", "-lc"]
               args:
                 - >

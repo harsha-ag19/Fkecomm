@@ -1,4 +1,3 @@
-FROM jfrog.fkinternal.com/jarvis-services/megatron-bridge:v0-test
 USER root
 
 # 1. Install Megatron-LM with --no-deps to prevent transitive dependency upgrades

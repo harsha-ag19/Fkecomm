@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.6
-FROM jfrog.fkinternal.com/fk-base-images/python:3.12.0-debian12.10
+
 
 USER root
 
